@@ -1,11 +1,9 @@
 package net.mehvahdjukaar.moonlight.core.misc;
 
-import com.google.common.collect.Lists;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import net.minecraft.client.resources.metadata.animation.AnimationFrame;
 import net.minecraft.client.resources.metadata.animation.AnimationMetadataSection;
-import net.minecraft.client.resources.metadata.animation.FrameSize;
 import net.minecraft.server.packs.AbstractPackResources;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.util.GsonHelper;
@@ -58,12 +56,27 @@ public record McMetaFile(@NotNull AnimationMetadataSection animation, JsonObject
      **/
     public static @Nullable McMetaFile merge(@Nullable McMetaFile mostImportant, @Nullable McMetaFile leastImportant) {
         if (mostImportant == null && leastImportant == null) return null;
-        if (leastImportant == null) return mostImportant;
-        if (mostImportant == null) return leastImportant;
-        if (mostImportant.animation == AnimationMetadataSection.EMPTY) {
+        else if (leastImportant == null) return mostImportant;
+        else if (mostImportant == null) return leastImportant;
+        else if (mostImportant.animation == AnimationMetadataSection.EMPTY) {
             return of(leastImportant.animation, mostImportant.moddedStuff);
         }
         return mostImportant;
+    }
+
+    public boolean hasAnimation() {
+        return this.animation != null;
+    }
+
+    /**
+     * How many frames a texture must have for this animation's frame indices to be valid.
+     * 0 when there's no explicit frame list, meaning the animation just plays every frame in order
+     */
+    public int requiredFrameCount() {
+        if (animation == null) return 0;
+        int[] highest = {-1};
+        animation.forEachFrame((i, t) -> highest[0] = Math.max(highest[0], i));
+        return highest[0] + 1;
     }
 
     public JsonObject toJson() {

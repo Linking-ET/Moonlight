@@ -5,7 +5,6 @@
   "compatibilityLevel": "JAVA_17",
   "plugin": "net.mehvahdjukaar.moonlight.core.mixins.MixinPlugin",
   "client": [
-
     "ClientLanguagesMixin",
     "ClientPacketListenerMixin",
     "DynamicTextureMixin",
@@ -18,10 +17,12 @@
     "ThirdPersonRendererMixin"
   ],
   "mixins": [
+    "accessor.PoiTypeAccessor",
     "BeeGoalMixin",
     "BlockItemMixin",
     "EntityMixin",
     "FixBlockPlaceContextMixin",
+    "GrindstoneMenuMixin",
     "GrindstoneMenuSlotMixin",
     "HoldingPlayerMixin",
     "InventoryMixin",
@@ -32,7 +33,6 @@
     "MapExtendingRecipeMixin",
     "MapItemDataPacketMixin",
     "MapItemMixin",
-    "ServerMultiPackResourceManagerMixin",
     "PistonBlockEntityMixin",
     "PoiMixin",
     "ReloadableClientResourcesMixin",
@@ -42,6 +42,7 @@
     "ShearItemMixin",
     "ThrownPotionMixin",
     "VillagerMixin",
+    "WorldLoaderMixin",
     "accessor.BrainAccessor",
     "accessor.DispenserBlockAccessor",
     "accessor.DispenserBlockEntityAccessor",

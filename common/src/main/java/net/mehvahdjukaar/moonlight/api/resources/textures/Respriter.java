@@ -4,6 +4,7 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectArrayMap;
 import net.mehvahdjukaar.moonlight.core.Moonlight;
 import net.mehvahdjukaar.moonlight.core.misc.McMetaFile;
 import net.minecraft.client.resources.metadata.animation.AnimationMetadataSection;
+import net.minecraft.util.FastColor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -116,9 +117,13 @@ public class Respriter {
         FrameColorRemapper colorRemapper = FrameColorRemapper.of(originalPalette, originalFrameCount,
                 targetPalettes, outputTexture.frameCount());
 
-        //TODO: add proper mask here. not just a color whitelist like its now
         outputTexture.forEachPixel(pixel -> {
             int ind = pixel.frameIndex();
+            //TODO:optimize. only needed for some types of textures
+            // If there's a recoloring mask, sample it. Skip recoloring if mask is "off" at this pixel
+            if (recoloringMask != null && FastColor.ABGR32.alpha(recoloringMask.sample(pixel.globalX, pixel.globalY)) != 0) {
+                return; // skip recoloring this pixel
+            }
             Integer newColor = colorRemapper.remapColor(ind, pixel.getValue());
             if (newColor != null) {
                 pixel.setValue(newColor);
@@ -166,7 +171,7 @@ public class Respriter {
             toPalette = toPalette.copy();
             toPalette.matchSize(originalPalette.size(), originalPalette.getAverageLuminanceStep());
             if (toPalette.size() != originalPalette.size()) {
-                Moonlight.LOGGER.error("Failed to create Color2ColorMap. Too few colors in toPalette");
+                Moonlight.LOGGER.error("Failed to create Color2ColorMap. Too few colors in toPalette: {} vs required {}", toPalette.size(), originalPalette.size());
                 //provided swap palette had too little colors
                 return EMPTY;
             }
@@ -184,6 +189,7 @@ public class Respriter {
 
     }
 
+
     @FunctionalInterface
     private interface FrameColorRemapper {
 
@@ -194,10 +200,11 @@ public class Respriter {
             boolean invalidSize = targetFrameCount > targetPalettes.size();
             if (originalFrameCount != 1 || invalidSize) {
                 if (invalidSize) {
-                    Moonlight.crashIfInDev("Respriter was given less palettes than needed!");
+                    Moonlight.logIfInDev("Respriter was given less palettes than needed!");
                 }
                 //it means original image is animated. Just use first palette given
-                Color2ColorMap singleColorMap = Color2ColorMap.create(originalPalette, targetPalettes.get(0));
+                Palette firstPalette = targetPalettes.get(0);
+                Color2ColorMap singleColorMap = Color2ColorMap.create(originalPalette, firstPalette);
 
                 return (frameIndex, color) -> singleColorMap.mapColor(color);
             } else {
@@ -207,13 +214,10 @@ public class Respriter {
                     mappingPerFrame.add(Color2ColorMap.create(originalPalette, toPalette));
                 }
 
-                return new FrameColorRemapper() {
-                    @Override
-                    public @Nullable Integer remapColor(int frameIndex, int color) {
-                        Color2ColorMap colorMap = mappingPerFrame.get(frameIndex);
-                        if (colorMap != null) return colorMap.mapColor(color);
-                        return null;
-                    }
+                return (frameIndex, color) -> {
+                    Color2ColorMap colorMap = mappingPerFrame.get(frameIndex);
+                    if (colorMap != null) return colorMap.mapColor(color);
+                    return null;
                 };
             }
         }

@@ -14,7 +14,11 @@ import net.mehvahdjukaar.moonlight.api.misc.EventCalled;
 import net.mehvahdjukaar.moonlight.api.misc.RegistryAccessJsonReloadListener;
 import net.mehvahdjukaar.moonlight.api.platform.PlatHelper;
 import net.mehvahdjukaar.moonlight.api.platform.RegHelper;
+import net.mehvahdjukaar.moonlight.api.resources.SimpleTagBuilder;
 import net.mehvahdjukaar.moonlight.api.resources.pack.DynResourceGenerator;
+import net.mehvahdjukaar.moonlight.api.resources.pack.DynServerResourcesGenerator;
+import net.mehvahdjukaar.moonlight.api.resources.pack.DynamicDataPack;
+import net.mehvahdjukaar.moonlight.api.resources.pack.ResourceGenTask;
 import net.mehvahdjukaar.moonlight.api.resources.recipe.BlockTypeSwapIngredient;
 import net.mehvahdjukaar.moonlight.api.set.BlockSetAPI;
 import net.mehvahdjukaar.moonlight.api.set.leaves.LeavesTypeRegistry;
@@ -31,24 +35,31 @@ import net.mehvahdjukaar.moonlight.core.set.BlocksColorInternal;
 import net.mehvahdjukaar.moonlight.core.set.DebugBlockTypes;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.packs.PackType;
+import net.minecraft.server.packs.repository.FolderRepositorySource;
+import net.minecraft.server.packs.repository.PackSource;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.MapItem;
 import net.minecraft.world.level.GameRules;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.ApiStatus;
 
 import java.lang.ref.WeakReference;
+import java.nio.file.Path;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.function.Consumer;
 
 @ApiStatus.Internal
 public class Moonlight {
@@ -78,26 +89,75 @@ public class Moonlight {
 
         BlockTypeSwapIngredient.init();
         VillagerAIInternal.init();
+        ItemListingRegistry.init();
         MapDataInternal.init();
         SoftFluidInternal.init();
         RegHelper.addDynamicDispenserBehaviorRegistration(Moonlight::registerBuiltinFluidBehavior);
 
         PlatHelper.addCommonSetup(Moonlight::commonSetup);
 
-        PlatHelper.addServerReloadListener(new ItemListingRegistry(), Moonlight.res("villager_trades"));
+        PlatHelper.addServerReloadListener(ItemListingRegistry.INSTANCE, Moonlight.res("villager_trades"));
 
         //hack
         BlockSetAPI.addDynamicRegistration((reg, wood) -> AdditionalItemPlacementsAPI.afterItemReg(),
                 WoodType.class, BuiltInRegistries.BLOCK_ENTITY_TYPE);
 
+        addGlobalDatapackLoader();
+        PlatHelper.addServerReloadListener(BlocksColorInternal.INSTANCE,
+                Moonlight.res("blocks_color_data"));
+
+
         //client init
         if (PlatHelper.getPhysicalSide().isClient()) {
             MoonlightClient.initClient();
         }
+
+        if (PlatHelper.isDev()) {
+            new MlTestGen().register();
+        }
+    }
+
+    private static class MlTestGen extends DynServerResourcesGenerator {
+        public MlTestGen() {
+            super(new DynamicDataPack(Moonlight.res("generated_pack")));
+            this.dynamicPack.addNamespaces("minecraft");
+        }
+
+        @Override
+        public Logger getLogger() {
+            return Moonlight.LOGGER;
+        }
+
+        @Override
+        public void regenerateDynamicAssets(Consumer<ResourceGenTask> executor) {
+            super.regenerateDynamicAssets(executor);
+            executor.accept((a, b) -> {
+                SimpleTagBuilder st = SimpleTagBuilder.of(Moonlight.res("test_tag"));
+                st.addEntry(Blocks.DIAMOND_BLOCK);
+                st.addEntry(Blocks.DIAMOND_ORE);
+                b.addTag(st, Registries.BLOCK);
+            });
+        }
+    }
+
+    private static void addGlobalDatapackLoader() {
+        //global datapacks
+        String globalPacksDir = CommonConfigs.GLOBAL_DATAPACKS_DIR.get();
+        if (!globalPacksDir.isEmpty()) {
+            Path path = PlatHelper.getGamePath().resolve(globalPacksDir);
+            //create folder if not exists
+            RegHelper.registerResourcePackSource(PackType.SERVER_DATA,
+                    new FolderRepositorySource(path,
+                            PackType.SERVER_DATA, PackSource.DEFAULT));
+            try {
+                path.toFile().mkdirs();
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     private static void commonSetup() {
-        BlocksColorInternal.setup();
+        BlocksColorInternal.INSTANCE.setup();
 
         if (PlatHelper.isDev()) {
             //MixinEnvironment.getCurrentEnvironment().audit();
@@ -126,6 +186,14 @@ public class Moonlight {
                 }
                 i++;
             }
+        }
+    }
+
+    @EventCalled
+    public static void onDataSyncToPlayer(ServerPlayer player, boolean joined) {
+        //send syncing packets just on login. datapack registries don't change on reload
+        if (joined) {
+            SoftFluidInternal.onDataSyncToPlayer(player, true);
         }
     }
 
@@ -217,5 +285,13 @@ public class Moonlight {
         }
     }
 
+    private static boolean warnedInvalidServer = false;
 
+    public static void warnInvalidServer() {
+        if (!warnedInvalidServer) {
+            LOGGER.error("It seems like you are on a VANILLA server. This could cause issues and is NOT supported and you are OUT OF SUPPORT!");
+            warnedInvalidServer = true;
+        }
+
+    }
 }

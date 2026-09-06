@@ -6,10 +6,7 @@ import net.fabricmc.fabric.api.blockrenderlayer.v1.BlockRenderLayerMap;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.model.loading.v1.ModelLoadingPlugin;
 import net.fabricmc.fabric.api.client.particle.v1.ParticleFactoryRegistry;
-import net.fabricmc.fabric.api.client.rendering.v1.ColorProviderRegistry;
-import net.fabricmc.fabric.api.client.rendering.v1.EntityModelLayerRegistry;
-import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
-import net.fabricmc.fabric.api.client.rendering.v1.TooltipComponentCallback;
+import net.fabricmc.fabric.api.client.rendering.v1.*;
 import net.fabricmc.fabric.api.resource.IdentifiableResourceReloadListener;
 import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
 import net.fabricmc.fabric.api.resource.ResourcePackActivationType;
@@ -49,6 +46,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluid;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -65,7 +63,7 @@ public class ClientHelperImpl {
 
     public static void addParticleRegistration(Consumer<ClientHelper.ParticleEvent> eventListener) {
         Moonlight.assertInitPhase();
-        MoonlightFabricClient.PRE_CLIENT_SETUP_WORK.add(() -> {
+        MoonlightFabricClient.addClientTask(() -> {
             eventListener.accept(ClientHelperImpl::registerParticle);
         });
     }
@@ -77,7 +75,7 @@ public class ClientHelperImpl {
     public static void addEntityRenderersRegistration(Consumer<ClientHelper.EntityRendererEvent> eventListener) {
         Moonlight.assertInitPhase();
 
-        MoonlightFabricClient.PRE_CLIENT_SETUP_WORK.add(() -> {
+        MoonlightFabricClient.addClientTask(() -> {
             eventListener.accept(EntityRendererRegistry::register);
         });
     }
@@ -85,7 +83,7 @@ public class ClientHelperImpl {
     public static void addBlockEntityRenderersRegistration(Consumer<ClientHelper.BlockEntityRendererEvent> eventListener) {
         Moonlight.assertInitPhase();
 
-        MoonlightFabricClient.PRE_CLIENT_SETUP_WORK.add(() -> {
+        MoonlightFabricClient.addClientTask(() -> {
             eventListener.accept(BlockEntityRenderers::register);
         });
     }
@@ -93,7 +91,7 @@ public class ClientHelperImpl {
     public static void addBlockColorsRegistration(Consumer<ClientHelper.BlockColorEvent> eventListener) {
         Moonlight.assertInitPhase();
 
-        MoonlightFabricClient.PRE_CLIENT_SETUP_WORK.add(() -> {
+        MoonlightFabricClient.addClientTask(() -> {
             eventListener.accept(new ClientHelper.BlockColorEvent() {
                 @Override
                 public void register(BlockColor color, Block... block) {
@@ -112,7 +110,7 @@ public class ClientHelperImpl {
     public static void addItemColorsRegistration(Consumer<ClientHelper.ItemColorEvent> eventListener) {
         Moonlight.assertInitPhase();
 
-        MoonlightFabricClient.PRE_CLIENT_SETUP_WORK.add(() -> {
+        MoonlightFabricClient.addClientTask(() -> {
             eventListener.accept(new ClientHelper.ItemColorEvent() {
                 @Override
                 public void register(ItemColor color, ItemLike... items) {
@@ -129,21 +127,31 @@ public class ClientHelperImpl {
     }
 
     public static void addClientReloadListener(Supplier<PreparableReloadListener> listener, ResourceLocation name) {
-        ResourceManagerHelper.get(PackType.CLIENT_RESOURCES).registerReloadListener(new IdentifiableResourceReloadListener() {
-            private final Supplier<PreparableReloadListener> inner = Suppliers.memoize(listener::get);
+        ResourceManagerHelper.get(PackType.CLIENT_RESOURCES).registerReloadListener(
+                new ReloadWrapper(listener, name));
+    }
 
-            @Override
-            public ResourceLocation getFabricId() {
-                return name;
-            }
+    private static final class ReloadWrapper implements IdentifiableResourceReloadListener, PreparableReloadListener {
+        private final Supplier<PreparableReloadListener> inner;
+        private final ResourceLocation getFabricId;
 
-            @Override
-            public CompletableFuture<Void> reload(PreparationBarrier preparationBarrier, ResourceManager resourceManager,
-                                                  ProfilerFiller preparationsProfiler, ProfilerFiller reloadProfiler,
-                                                  Executor backgroundExecutor, Executor gameExecutor) {
-                return inner.get().reload(preparationBarrier, resourceManager, preparationsProfiler, reloadProfiler, backgroundExecutor, gameExecutor);
-            }
-        });
+        private ReloadWrapper(Supplier<PreparableReloadListener> listenerSupplier,
+                              ResourceLocation getFabricId) {
+            this.inner = Suppliers.memoize(listenerSupplier::get);
+            this.getFabricId = getFabricId;
+        }
+
+        @Override
+        public CompletableFuture<Void> reload(PreparationBarrier preparationBarrier, ResourceManager resourceManager,
+                                              ProfilerFiller preparationsProfiler, ProfilerFiller reloadProfiler,
+                                              Executor backgroundExecutor, Executor gameExecutor) {
+            return inner.get().reload(preparationBarrier, resourceManager, preparationsProfiler, reloadProfiler, backgroundExecutor, gameExecutor);
+        }
+
+        @Override
+        public ResourceLocation getFabricId() {
+            return getFabricId;
+        }
     }
 
     public static final Map<ItemLike, IItemDecoratorRenderer> ITEM_DECORATORS = new IdentityHashMap<>();
@@ -151,7 +159,7 @@ public class ClientHelperImpl {
     public static void addItemDecoratorsRegistration(Consumer<ClientHelper.ItemDecoratorEvent> eventListener) {
         Moonlight.assertInitPhase();
 
-        MoonlightFabricClient.PRE_CLIENT_SETUP_WORK.add(() -> {
+        MoonlightFabricClient.addClientTask(() -> {
             eventListener.accept(ITEM_DECORATORS::put);
         });
     }
@@ -160,7 +168,7 @@ public class ClientHelperImpl {
     public static void addModelLayerRegistration(Consumer<ClientHelper.ModelLayerEvent> eventListener) {
         Moonlight.assertInitPhase();
 
-        MoonlightFabricClient.PRE_CLIENT_SETUP_WORK.add(() -> {
+        MoonlightFabricClient.addClientTask(() -> {
             eventListener.accept((a, b) -> EntityModelLayerRegistry.registerModelLayer(a, b::get));
         });
     }
@@ -175,7 +183,7 @@ public class ClientHelperImpl {
     public static void addTooltipComponentRegistration(Consumer<ClientHelper.TooltipComponentEvent> eventListener) {
         Moonlight.assertInitPhase();
 
-        MoonlightFabricClient.PRE_CLIENT_SETUP_WORK.add(() -> {
+        MoonlightFabricClient.addClientTask(() -> {
             eventListener.accept(ClientHelperImpl::tooltipReg);
         });
     }
@@ -188,7 +196,7 @@ public class ClientHelperImpl {
     public static void addModelLoaderRegistration(Consumer<ClientHelper.ModelLoaderEvent> eventListener) {
         Moonlight.assertInitPhase();
 
-        MoonlightFabricClient.PRE_CLIENT_SETUP_WORK.add(() -> {
+        MoonlightFabricClient.addClientTask(() -> {
             eventListener.accept(MLFabricModelLoaderRegistry::registerLoader);
         });
     }
@@ -196,7 +204,7 @@ public class ClientHelperImpl {
     public static void addKeyBindRegistration(Consumer<ClientHelper.KeyBindEvent> eventListener) {
         Moonlight.assertInitPhase();
 
-        MoonlightFabricClient.PRE_CLIENT_SETUP_WORK.add(() -> {
+        MoonlightFabricClient.addClientTask(() -> {
             eventListener.accept(KeyBindingHelper::registerKeyBinding);
         });
     }
@@ -223,7 +231,7 @@ public class ClientHelperImpl {
     public static void addClientSetup(Runnable clientSetup) {
         Moonlight.assertInitPhase();
 
-        MoonlightFabricClient.CLIENT_SETUP_WORK.add(clientSetup);
+        MoonlightFabricClient.addClientTaskLate(clientSetup);
     }
 
 
@@ -250,11 +258,18 @@ public class ClientHelperImpl {
         return null;
     }
 
-    public static final List<Consumer<ClientHelper.ShaderEvent>> SHADER_REGISTRATIONS = Collections.synchronizedList(new ArrayList<>());;
-
     public static void addShaderRegistration(Consumer<ClientHelper.ShaderEvent> eventListener) {
         Moonlight.assertInitPhase();
-        SHADER_REGISTRATIONS.add(eventListener);
+        CoreShaderRegistrationCallback.EVENT.register(context -> {
+          eventListener.accept((id, vertexFormat, setter) ->
+          {
+              try {
+                  context.register(id, vertexFormat, setter);
+              } catch (IOException e) {
+                  throw new RuntimeException(e);
+              }
+          });
+        });
     }
 
 }

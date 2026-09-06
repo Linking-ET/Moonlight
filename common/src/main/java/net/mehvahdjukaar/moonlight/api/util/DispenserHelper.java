@@ -70,7 +70,7 @@ public class DispenserHelper {
                 originals.put(item, null);
             } else {
                 failed.add(item);
-                Moonlight.LOGGER.error("Failed to restore original behavior for item: {}, {}", item, current);
+               // Moonlight.LOGGER.error("Failed to restore original behavior for item: {}, {}", item, current);
             }
         }
         //restore vanilla state

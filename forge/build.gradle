@@ -15,8 +15,8 @@ loom {
         convertAccessWideners = true
         extraAccessWideners.add loom.accessWidenerPath.get().asFile.name
 
-        mixinConfig  "moonlight-common.mixins.json"
-        mixinConfig  "moonlight.mixins.json"
+        mixinConfig "moonlight-common.mixins.json"
+        mixinConfig "moonlight.mixins.json"
     }
 }
 
@@ -41,25 +41,29 @@ dependencies {
     compileOnly(annotationProcessor("io.github.llamalad7:mixinextras-common:0.3.6"))
     implementation(include("io.github.llamalad7:mixinextras-forge:0.3.6"))
 
+    implementation(annotationProcessor("com.github.bawnorton.mixinsquared:mixinsquared-common:${mixin_squared_version}"))
+    implementation(include("com.github.bawnorton.mixinsquared:mixinsquared-forge:${mixin_squared_version}"))
+
     annotationProcessor 'net.fabricmc:sponge-mixin:0.12.5+mixin.0.8.5'
 
     modRuntimeOnly("curse.maven:yacl-667299:4523736")
-    modImplementation ("curse.maven:configured-457570:5180900")
+    modImplementation("curse.maven:configured-457570:5180900")
 
     modCompileOnly("curse.maven:the-twilight-forest-227639:4755494")
-    modRuntimeOnly("curse.maven:alltheleaks-1091339:5936734")
-   // modImplementation("curse.maven:spelunkery-790530:6122072")
+    modCompileOnly("curse.maven:alltheleaks-1091339:5936734")
+    // modImplementation("curse.maven:spelunkery-790530:6122072")
 
     //modRuntimeOnly("curse.maven:official-divinerpg-363543:5715606")
     //modRuntimeOnly("curse.maven:every-compat-628539:5792496")
     //modRuntimeOnly("curse.maven:regions-unexplored-659110:5151869")
-   //// modRuntimeOnly("curse.maven:terrablender-563928:5315023")
+    //// modRuntimeOnly("curse.maven:terrablender-563928:5315023")
     //modRuntimeOnly("curse.maven:productivetrees-867074:5290721")
-   // modRuntimeOnly("com.tterrag.registrate:Registrate:MC1.19-1.1.5")
-   //// modImplementation("com.jozufozu.flywheel:flywheel-forge-${flywheel_minecraft_version}:${flywheel_version}")
+    // modRuntimeOnly("com.tterrag.registrate:Registrate:MC1.19-1.1.5")
+    //// modImplementation("com.jozufozu.flywheel:flywheel-forge-${flywheel_minecraft_version}:${flywheel_version}")
 
-   // modRuntimeOnly("net.mehvahdjukaar:supplementaries-forge:1.19.2-2.2.3")
-    modCompileOnly ("curse.maven:map-atlases-forge-519759:4990003")
+    modRuntimeOnly("curse.maven:supplementaries-412082:7884611")
+    //modRuntimeOnly("curse.maven:supplementaries-squared-838411:7440331")
+    modCompileOnly("curse.maven:map-atlases-forge-519759:4990003")
     //modImplementation ("curse.maven:supplementaries-412082:4995508")
 
 
@@ -113,7 +117,7 @@ sourcesJar {
     archiveClassifier = "forge-sources"
 }
 
-remapSourcesJar{
+remapSourcesJar {
     archiveClassifier = "forge-sources"
 }
 
@@ -129,13 +133,5 @@ publishing {
             artifactId = rootProject.mod_id + "-" + project.name
             from components.java
         }
-    }
-
-    repositories {
-        maven {
-            url = "https://www.cursemaven.com"
-            allowInsecureProtocol = true
-        }
-
     }
 }

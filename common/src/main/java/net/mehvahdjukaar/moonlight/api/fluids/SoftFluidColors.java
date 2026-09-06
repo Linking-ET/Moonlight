@@ -1,45 +1,58 @@
 package net.mehvahdjukaar.moonlight.api.fluids;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonElement;
 import dev.architectury.injectables.annotations.ExpectPlatform;
 import net.mehvahdjukaar.moonlight.api.client.TextureCache;
 import net.mehvahdjukaar.moonlight.api.client.texture_renderer.RenderedTexturesManager;
+import net.mehvahdjukaar.moonlight.api.misc.RegistryAccessJsonReloadListener;
 import net.mehvahdjukaar.moonlight.api.platform.ClientHelper;
 import net.mehvahdjukaar.moonlight.core.Moonlight;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.texture.SpriteContents;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Registry;
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.packs.resources.ResourceManager;
-import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import net.minecraft.util.FastColor;
 import net.minecraft.world.level.BlockAndTintGetter;
 
-// client class
-public class SoftFluidColors implements ResourceManagerReloadListener {
+import java.util.Map;
 
-    @Override
-    public void onResourceManagerReload(ResourceManager resourceManager) {
-        RenderedTexturesManager.clearCache();
-        TextureCache.clear();
-        refreshParticleColors();
+// client class
+public class SoftFluidColors extends RegistryAccessJsonReloadListener {
+
+    public SoftFluidColors() {
+        super(new Gson(), "moonlight/dummy");
     }
 
-    public static void refreshParticleColors() {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null) return;
+    @Override
+    public void parse(Map<ResourceLocation, JsonElement> jsonMap, RegistryAccess access) {
+        RenderedTexturesManager.clearCache();
+        TextureCache.clear();
+        refreshParticleColors(access);
+    }
 
-        Registry<SoftFluid> reg = SoftFluidRegistry.getRegistry(mc.level.registryAccess());
-        if (reg == null) {                          // ← 防御：注册表不存在
-            // 清空旧缓存，避免脏数据
-            for (SoftFluid f : SoftFluidRegistry.getValues())
-                f.averageTextureTint = -1;
-            return;                                 // 安静返回，不继续跑
+    //why is it called twice?
+    //once on fluid map reload (server join on client) since there we have all the fluids
+    //then once when resources are reloaded (resource pack change) since these depend on textures
+    public static void refreshParticleColors(RegistryAccess access) {
+        Minecraft mc = Minecraft.getInstance();
+
+        Registry<SoftFluid> reg = access.registry(SoftFluidRegistry.KEY).orElse(null);
+        //dumb velocity
+        if (reg == null) {
+            for (SoftFluid f : SoftFluidRegistry.getValues()) {
+                //purple, clearly something is wrong
+                f.averageTextureTint = 0xff_aa00ff;
+            }
+            Moonlight.warnInvalidServer();
+            return;
         }
 
-        var fluids = reg.entrySet();
-        for (var entry : fluids) {
+        for (var entry : reg.entrySet()) {
             SoftFluid fluid = entry.getValue();
             ResourceLocation location = fluid.getStillTexture();
             int averageColor = -1;
@@ -50,8 +63,7 @@ public class SoftFluidColors implements ResourceManagerReloadListener {
             try {
                 averageColor = getAverageColor(sprite, tint);
             } catch (Exception e) {
-                Moonlight.LOGGER.warn("Failed to load particle color for " + sprite +
-                        " using current resource pack. might be a broken png.mcmeta");
+                Moonlight.LOGGER.warn("Failed to load particle color for {} using current resource pack. might be a broken png.mcmeta", sprite);
             }
             fluid.averageTextureTint = averageColor;
         }
@@ -60,7 +72,7 @@ public class SoftFluidColors implements ResourceManagerReloadListener {
     //credits to Random832
     @SuppressWarnings("ConstantConditions")
     private static int getAverageColor(TextureAtlasSprite sprite, int tint) {
-        var c = sprite.contents();
+        SpriteContents c = sprite.contents();
         if (sprite == null || c.getFrameCount() == 0) return -1;
 
         int tintR = tint >> 16 & 255;

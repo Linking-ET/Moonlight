@@ -14,7 +14,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
-import java.util.function.Function;
 import java.util.function.Supplier;
 
 
@@ -105,8 +104,8 @@ public class FluidContainerList implements Iterable<FluidContainerList.Category>
     protected void add(Item empty, Item filled, int amount, SoundEvent fillSound, SoundEvent emptySound) {
         var c = this.emptyToFilledMap.computeIfAbsent(empty, i -> new Category(i, amount));
         c.addItem(filled);
-        c.fillSound = fillSound;
-        c.emptySound = emptySound;
+        if (c.fillSound == null) c.fillSound = fillSound;
+        if (c.emptySound == null) c.emptySound = emptySound;
     }
 
 
@@ -119,8 +118,10 @@ public class FluidContainerList implements Iterable<FluidContainerList.Category>
                 ResourceLocation.CODEC.fieldOf("empty").forGetter(c -> Utils.getID(c.emptyContainer)),
                 SoftFluid.Capacity.INT_CODEC.fieldOf("capacity").forGetter(Category::getCapacity),
                 ResourceLocation.CODEC.listOf().fieldOf("filled").forGetter(c -> c.filled.stream().map(Utils::getID).toList()),
-                StrOpt.of(BuiltInRegistries.SOUND_EVENT.byNameCodec(), "fill_sound").forGetter(getHackyOptional(Category::getFillSound)),
-                StrOpt.of(BuiltInRegistries.SOUND_EVENT.byNameCodec(), "empty_sound").forGetter(getHackyOptional(Category::getEmptySound))
+                StrOpt.of(BuiltInRegistries.SOUND_EVENT.byNameCodec(), "fill_sound")
+                        .forGetter(c -> Optional.ofNullable(c.getFillSound())),
+                StrOpt.of(BuiltInRegistries.SOUND_EVENT.byNameCodec(), "empty_sound")
+                        .forGetter(c -> Optional.ofNullable(c.getEmptySound()))
         ).apply(instance, Category::decode));
 
         private final Item emptyContainer;
@@ -133,8 +134,8 @@ public class FluidContainerList implements Iterable<FluidContainerList.Category>
         private Category(Item emptyContainer, int capacity, @Nullable SoundEvent fillSound, @Nullable SoundEvent emptySound) {
             this.emptyContainer = emptyContainer;
             this.containerCapacity = capacity;
-            this.fillSound = fillSound == null ? SoundEvents.BOTTLE_FILL : fillSound;
-            this.emptySound = emptySound == null ? SoundEvents.BOTTLE_EMPTY : emptySound;
+            this.fillSound = fillSound;
+            this.emptySound = emptySound;
         }
 
         private Category(Item emptyContainer, int capacity) {
@@ -181,11 +182,11 @@ public class FluidContainerList implements Iterable<FluidContainerList.Category>
         }
 
         public SoundEvent getFillSound() {
-            return fillSound;
+            return fillSound == null ? SoundEvents.BOTTLE_FILL : fillSound;
         }
 
         public SoundEvent getEmptySound() {
-            return emptySound;
+            return emptySound == null ? SoundEvents.BOTTLE_EMPTY : emptySound;
         }
 
         public List<Item> getFilledItems() {
@@ -199,14 +200,5 @@ public class FluidContainerList implements Iterable<FluidContainerList.Category>
         public Optional<Item> getFirstFilled() {
             return this.filled.stream().findFirst();
         }
-    }
-
-    //hacky. gets an optional if the fluid value is its default one
-    private static <T> Function<Category, Optional<T>> getHackyOptional(final Function<Category, T> getter) {
-        return f -> {
-            var value = getter.apply(f);
-            var def = getter.apply(Category.EMPTY.get());
-            return value.equals(def) ? Optional.empty() : Optional.of(value);
-        };
     }
 }

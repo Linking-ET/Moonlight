@@ -3,6 +3,8 @@ package net.mehvahdjukaar.moonlight.api.platform;
 import com.google.gson.JsonElement;
 import com.mojang.authlib.GameProfile;
 import dev.architectury.injectables.annotations.ExpectPlatform;
+import net.mehvahdjukaar.moonlight.core.fake_player.FakeGenericPlayer;
+import net.mehvahdjukaar.moonlight.core.fake_player.FakeLocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.RegistryAccess;
@@ -106,9 +108,17 @@ public class PlatHelper {
         throw new AssertionError();
     }
 
+    @Contract
     @ExpectPlatform
     public static boolean isFakePlayer(ServerPlayer instance) {
         throw new AssertionError();
+    }
+
+    public static boolean isAFakePlayer(Player player) {
+        if (player instanceof FakeGenericPlayer) return true;
+        if (PlatHelper.getPhysicalSide().isClient() && player instanceof FakeLocalPlayer) return true;
+        if (player instanceof ServerPlayer sp && isFakePlayer(sp)) return true;
+        return false;
     }
 
     public enum Platform {
@@ -231,11 +241,10 @@ public class PlatHelper {
         throw new AssertionError();
     }
 
-    @ExpectPlatform
+    @Deprecated(forRemoval = true)
     public static void registerResourcePack(PackType packType, Supplier<Pack> packSupplier) {
-        throw new AssertionError();
+        RegHelper.registerResourcePack(packType, packSupplier);
     }
-
 
     @Contract
     @ExpectPlatform

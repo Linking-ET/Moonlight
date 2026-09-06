@@ -3,12 +3,15 @@ package net.mehvahdjukaar.moonlight.api.set.leaves;
 import net.mehvahdjukaar.moonlight.api.set.BlockTypeRegistry;
 import net.mehvahdjukaar.moonlight.api.set.wood.WoodType;
 import net.mehvahdjukaar.moonlight.api.set.wood.WoodTypeRegistry;
+import net.mehvahdjukaar.moonlight.api.util.Utils;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.LeavesBlock;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
+
+import static net.mehvahdjukaar.moonlight.api.set.wood.VanillaWoodChildKeys.LOG;
 
 public class LeavesTypeRegistry extends BlockTypeRegistry<LeavesType> {
 
@@ -94,40 +97,52 @@ public class LeavesTypeRegistry extends BlockTypeRegistry<LeavesType> {
                 namespace.matches("dynamictrees|dt\\w+") || path.contains("hanging");
     }
 
+    /// Add LeavesType's associated WoodType via LOG to SpecialLeavesToWood
+    public void addToLeavesToWoodMap(ResourceLocation leavesType, Block log) {
+        if (log != null) {
+            ResourceLocation logId = Utils.getID(log);
+            String[] words = logId.getPath().split("_");
+            String nameWood = (words.length == 3) ? words[0] +"_"+ words[1] : words[0];
+            ResourceLocation woodTypeId = new ResourceLocation(logId.getNamespace(), nameWood);
+            specialLeavesToWood.put(leavesType, woodTypeId);
+        }
+    }
 
     @Override
     public void finalizeAndFreeze() {
         super.finalizeAndFreeze();
 
         // add wood to leaves mapping. we know this runs after wood types are registered
-        for (var l : this.getValues()) {
-            ResourceLocation leavesId = l.id;
-            ResourceLocation id = specialLeavesToWood.getOrDefault(leavesId, leavesId);
-            WoodType o = WoodTypeRegistry.INSTANCE.get(id);
-            String path = id.getPath();
-            String namespace = id.getNamespace();
-            if (o == null) {
+        for (LeavesType leavesType : this.getValues()) {
+            ResourceLocation leavesId = leavesType.id;
+            ResourceLocation woodTypeId = specialLeavesToWood.getOrDefault(leavesId, leavesId);
+            WoodType woodType = WoodTypeRegistry.INSTANCE.get(woodTypeId);
+            String path = woodTypeId.getPath();
+            String namespace = woodTypeId.getNamespace();
+
+            if (woodType == null) {
                 for (WoodType w : WoodTypeRegistry.INSTANCE.getValues()) {
                     if (w.id.getPath().equals(path)) {
-                        o = w;
+                        woodType = w;
                         break;
                     }
                 }
             }
-            if (o == null) {
+            if (woodType == null) {
                 //this assigns "variant leaves types" to their expected vanilla woods
                 //i.e. "blossoming_oak" -> "oak"
                 for (WoodType w : WoodTypeRegistry.INSTANCE.getValues()) {
                     if (w.isVanilla() || w.id.getNamespace().equals(namespace)) { //true vanilla
                         if (path.endsWith(w.id.getPath())) {
-                            o = w;
+                            woodType = w;
                             //don't break to avoid associating "oak" instead of "dark_oak"
                         }
                     }
                 }
             }
-            if (o != null) {
-                leavesToWood.put(l, o);
+            if (woodType != null) {
+                leavesToWood.put(leavesType, woodType);
+                leavesType.addChild(LOG, woodType.log);
             }
         }
     }

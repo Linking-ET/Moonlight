@@ -1,27 +1,15 @@
 package net.mehvahdjukaar.moonlight.forge;
 
 
-import com.mojang.blaze3d.vertex.DefaultVertexFormat;
-import net.mehvahdjukaar.moonlight.api.client.util.ParticleUtil;
-import net.mehvahdjukaar.moonlight.api.client.util.RenderUtil;
 import net.mehvahdjukaar.moonlight.api.entity.IControllableVehicle;
-import net.mehvahdjukaar.moonlight.api.platform.ClientHelper;
-import net.mehvahdjukaar.moonlight.api.resources.recipe.BlockTypeSwapIngredient;
-import net.mehvahdjukaar.moonlight.api.set.wood.WoodType;
-import net.mehvahdjukaar.moonlight.core.Moonlight;
 import net.mehvahdjukaar.moonlight.core.MoonlightClient;
-import net.mehvahdjukaar.moonlight.core.client.MLRenderTypes;
+import net.mehvahdjukaar.moonlight.core.misc.FakeLevelManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.Input;
-import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.ai.village.poi.PoiTypes;
-import net.minecraft.world.item.BucketItem;
-import net.minecraft.world.item.crafting.Ingredient;
-import net.minecraft.world.level.block.Block;
 import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.client.event.MovementInputUpdateEvent;
-import net.minecraftforge.client.event.RegisterShadersEvent;
 import net.minecraftforge.client.event.TextureStitchEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -35,6 +23,11 @@ public class MoonlightForgeClient {
     public static void init() {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
         modEventBus.addListener(EventPriority.LOWEST, MoonlightForgeClient::onTextureStitch);
+    }
+
+    @SubscribeEvent
+    public static void onPlayerLoggedOut(ClientPlayerNetworkEvent.LoggingOut event) {
+        FakeLevelManager.invalidateAll();
     }
 
 

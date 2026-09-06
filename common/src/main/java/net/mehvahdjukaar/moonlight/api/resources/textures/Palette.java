@@ -5,6 +5,7 @@ import net.mehvahdjukaar.moonlight.api.util.math.MthUtils;
 import net.mehvahdjukaar.moonlight.api.util.math.colors.BaseColor;
 import net.mehvahdjukaar.moonlight.api.util.math.colors.HCLColor;
 import net.mehvahdjukaar.moonlight.api.util.math.colors.LABColor;
+import net.mehvahdjukaar.moonlight.api.util.math.colors.RGBColor;
 import net.mehvahdjukaar.moonlight.core.Moonlight;
 import net.minecraft.util.FastColor;
 import net.minecraft.util.Mth;
@@ -92,6 +93,7 @@ public class Palette implements Set<PaletteColor> {
     }
 
     private void addUnchecked(PaletteColor color) {
+        if (wasColorClipped(color)) return;
         if (color.rgb().alpha() == 0) return;
         internal.add(color);
         this.sort();
@@ -112,6 +114,7 @@ public class Palette implements Set<PaletteColor> {
     public boolean addAll(@NotNull Collection<? extends PaletteColor> colors) {
         boolean added = false;
         for (var c : colors) {
+            if (c.rgb().alpha() == 0) continue;
             if (!hasColor(c)) {
                 internal.add(c);
                 added = true;
@@ -211,7 +214,7 @@ public class Palette implements Set<PaletteColor> {
      * @param slope percentage of palette. from 0 to 1
      */
     public PaletteColor getColorAtSlope(float slope) {
-        int index = Math.round((internal.size() - 1) * slope);
+        int index = Math.round((internal.size() - 1) * Mth.clamp(slope, 0, 1));
         return internal.get(index);
     }
 
@@ -248,6 +251,9 @@ public class Palette implements Set<PaletteColor> {
 
     //TODO: make this depend on interger palette luminance step too
     public void matchSize(int targetSize, @Nullable Float targetLumStep) {
+        int originalSize = this.size();
+        int sizeDiff = Mth.abs(targetSize - originalSize);
+        sizeDiff = Math.max(6, sizeDiff);
         if (targetLumStep != null && (targetSize - 1) * targetLumStep > 1)
             throw new UnsupportedOperationException("Palette (size-1) * luminance step must be less than 1");
         if (targetLumStep != null && targetLumStep < 0)
@@ -260,15 +266,20 @@ public class Palette implements Set<PaletteColor> {
             PaletteColor first = this.get(0);
             this.add(first.getDarkened());
             this.add(first.getLightened());
+            if (this.size() == 1) {
+                Moonlight.LOGGER.warn("Could not expand single color palette {}", first);
+                return;
+            }
         }
-        if (this.size() == 2 && targetLumStep == null) {
+        if (this.size() == 2 && targetSize > 1 && targetLumStep == null) {
             var lightest = this.getLightest();
             var darkest = this.getDarkest();
             Palette other = Palette.fromArc(lightest.hcl(), darkest.hcl(), targetSize);
             this.internal.clear();
             this.internal.addAll(other.getValues());
         }
-        while (this.size() > targetSize) {
+        int maxTries = sizeDiff * 6;
+        while (this.size() > targetSize && maxTries-- > 0) {
             if (this.size() > 14) {
                 //too many color, we remove the least used
                 removeLeastUsed();
@@ -276,23 +287,25 @@ public class Palette implements Set<PaletteColor> {
                 //we remove and merge the one close to eachother. we could do some smarter check here...
                 reduceAndAverage();
             } //TODO: add this.shouldChangeRange(targetSize, targetLuminanceStep) and decrease outer. maybe not that needed since reduce does merge and remove outer colors too
+            if (maxTries == 1) {
+                Moonlight.LOGGER.warn("Something went wrong while reducing colors. Max iteration step reached. O {}, T {}, C {}, L {}",originalSize, targetSize, this.size(), targetLumStep );
+            }
         }
         boolean down = true;
         boolean canIncreaseDown = true;
         boolean canIncreaseUp = true;
-        int currentSize;
-        while ((currentSize = this.size()) < targetSize) {
-            //safety check if palette is full
+        maxTries = sizeDiff * 6;
+        while (this.size() < targetSize && maxTries-- > 0) {
+            //safeguard if palette is full
             //increase inner if it shouldn't increase outer or if it can't increase outer
             if ((!canIncreaseDown && !canIncreaseUp) ||
                     (!this.shouldExpandRange(targetSize, targetLumStep))) { //&& this.hasLuminanceGap()
                 increaseInner();
             } else {
                 //increase up and down every cycle
-                if (down) increaseDown();
-                else increaseUp();
+                PaletteColor added = down ? increaseDown() : increaseUp();
                 //if it didn't increase means we are at max luminance, probably white
-                if (currentSize == this.size()) {
+                if (added == null) {
                     if (down) canIncreaseDown = false;
                     else canIncreaseUp = false;
 
@@ -301,7 +314,9 @@ public class Palette implements Set<PaletteColor> {
                 if (canIncreaseDown && canIncreaseUp)
                     down = !down;
             }
-
+            if (maxTries == 1) {
+                Moonlight.LOGGER.warn("Something went wrong while increasing colors. Max iteration step reached. O {}, T {}, C {}, L {}",originalSize, targetSize, this.size(), targetLumStep );
+            }
         }
     }
 
@@ -310,7 +325,7 @@ public class Palette implements Set<PaletteColor> {
      */
     private boolean shouldExpandRange(int targetSize, @Nullable Float targetStep) {
         if (targetStep == null) return false;
-        float targetRange = targetSize * targetStep;
+        float targetRange = (targetSize - 1) * targetStep;
         float currentRange = this.getLuminanceSpan();
         return currentRange < targetRange;
     }
@@ -357,8 +372,20 @@ public class Palette implements Set<PaletteColor> {
      * @return newly added color
      */
     public PaletteColor reduceAndAverage() {
-        int index = 0;
-        float minDelta = 10000;
+        int index = indexOfSmallestLuminanceStep();
+        PaletteColor toRemove = this.get(index);
+        PaletteColor toRemove2 = this.get(index - 1);
+        this.remove(toRemove);
+        this.remove(toRemove2);
+        var newColor = new PaletteColor(toRemove.lab().mixWith(toRemove2.lab()));
+        newColor.setOccurrence(toRemove.getOccurrence() + toRemove2.getOccurrence());
+        this.addUnchecked(newColor);
+        return newColor;
+    }
+
+    private int indexOfSmallestLuminanceStep() {
+        int index = 1;
+        float minDelta = Float.MAX_VALUE;
         float lastLum = this.get(0).luminance();
         for (int i = 1; i < this.size(); i++) {
             float l = this.get(i).luminance();
@@ -369,14 +396,7 @@ public class Palette implements Set<PaletteColor> {
             }
             lastLum = l;
         }
-        PaletteColor toRemove = this.get(index);
-        PaletteColor toRemove2 = this.get(index - 1);
-        this.remove(toRemove);
-        this.remove(toRemove2);
-        var newColor = new PaletteColor(toRemove.lab().mixWith(toRemove2.lab()));
-        newColor.setOccurrence(toRemove.getOccurrence() * toRemove2.getOccurrence());
-        this.add(newColor);
-        return newColor;
+        return index;
     }
 
     /**
@@ -392,6 +412,7 @@ public class Palette implements Set<PaletteColor> {
             throw new UnsupportedOperationException("Luminance span must be between 0 and 1");
         float currentSpan = this.getLuminanceSpan();
         while (Mth.abs(currentSpan - targetLuminanceSpan) > 0.5 * this.getAverageLuminanceStep()) {
+            int sizeBefore = this.size();
             if (currentSpan < targetLuminanceSpan) {
                 if (this.getLightest().luminance() < 1 - this.getDarkest().luminance()) {
                     this.increaseUp();
@@ -399,6 +420,7 @@ public class Palette implements Set<PaletteColor> {
                     this.increaseDown();
                 }
             } else if (currentSpan > targetLuminanceSpan) {
+                if (this.size() <= 2) break;
                 if (this.getLightest().luminance() > 1 - this.getDarkest().luminance()) {
                     this.reduceUp();
                 } else {
@@ -407,6 +429,7 @@ public class Palette implements Set<PaletteColor> {
             } else {
                 break;
             }
+            if (sizeBefore == this.size()) break;
             currentSpan = this.getLuminanceSpan();
         }
     }
@@ -424,20 +447,26 @@ public class Palette implements Set<PaletteColor> {
         float currentMin = this.getDarkest().luminance();
         float currentMax = this.getLightest().luminance();
         while (Mth.abs(currentMin - minLuminance) > 0.5 * this.getAverageLuminanceStep()) {
+            int sizeBefore = this.size();
             if (currentMin < minLuminance) {
+                if (this.size() <= 2) break;
                 this.reduceDown();
             } else {
                 this.increaseDown();
             }
+            if (sizeBefore == this.size()) break;
             currentMin = this.getDarkest().luminance();
         }
 
         while (Mth.abs(currentMax - maxLuminance) > 0.5 * this.getAverageLuminanceStep()) {
+            int sizeBefore = this.size();
             if (currentMax > maxLuminance) {
+                if (this.size() <= 2) break;
                 this.reduceUp();
             } else {
                 this.increaseUp();
             }
+            if (sizeBefore == this.size()) break;
             currentMax = this.getLightest().luminance();
         }
     }
@@ -450,16 +479,33 @@ public class Palette implements Set<PaletteColor> {
      * @param newLuminanceStep you can see this as contrast between 2 colors.
      */
     public void matchLuminanceStep(float newLuminanceStep) {
-        float centerLuminance = getCenterLuminance();
         int size = this.size();
-        float lowerLuminance = centerLuminance - newLuminanceStep * size / 2;
-        var copy = this.copy();
-        for (int i = 0; i < size; i++) {
-            PaletteColor color = copy.get(i);
-            float newLum = lowerLuminance + i * newLuminanceStep;
-            this.remove(color);
-            this.addUnchecked(new PaletteColor(color.hcl().withLuminance(newLum)));
+        if (size < 2) return;
+        //n colors cover n - 1 steps, tighten the step if that overflows [0, 1]
+        float span = newLuminanceStep * (size - 1);
+        if (span > 1) {
+            newLuminanceStep = 1f / (size - 1);
+            span = 1;
         }
+        float lowerLuminance = Mth.clamp(getCenterLuminance() - span / 2, 0, 1 - span);
+
+        List<PaletteColor> rescaled = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            PaletteColor color = internal.get(i);
+            var moved = new PaletteColor(color.hcl().withLuminance(lowerLuminance + i * newLuminanceStep));
+            moved.setOccurrence(color.getOccurrence());
+            rescaled.add(moved);
+        }
+        internal.clear();
+        internal.addAll(rescaled);
+        this.sort();
+    }
+
+    /**
+     * Scales the contrast between neighboring colors, keeping size and center luminance
+     */
+    public void multiplyContrast(float factor) {
+        matchLuminanceStep(this.getAverageLuminanceStep() * factor);
     }
 
     /**
@@ -573,6 +619,62 @@ public class Palette implements Set<PaletteColor> {
         return newC;
     }
 
+    //TODO: finish
+
+
+    /**
+     * Adds one more color by resampling the palette as a curve in Lab space.
+     * Keeps first and last colors fixed, redistributes intermediates evenly with jitter.
+     */
+    public void resampleWithOneMore(float jitterFraction) {
+        if (this.size() < 2) return;
+        Random rng = new Random(); // deterministic
+
+        int newSize = this.size() + 1;
+        float firstLum = this.get(0).luminance();
+        float lastLum = this.get(this.size() - 1).luminance();
+        float span = lastLum - firstLum;
+
+        // Ideal step size in luminance
+        float idealStep = span / (newSize - 1);
+
+        List<PaletteColor> newPalette = new ArrayList<>();
+        newPalette.add(this.get(0)); // keep first
+
+        for (int i = 1; i < newSize - 1; i++) {
+            // Jitter: small offset around evenly spaced luminance
+            float jitter = (float) ((rng.nextDouble() * 2 - 1) * jitterFraction * idealStep);
+            float targetLum = firstLum + i * idealStep + jitter;
+
+            // Clamp to valid range
+            if (targetLum <= firstLum) targetLum = firstLum + 0.01f;
+            if (targetLum >= lastLum) targetLum = lastLum - 0.01f;
+
+            // Find surrounding colors in old palette
+            PaletteColor lower = this.get(0);
+            PaletteColor upper = this.get(this.size() - 1);
+            for (int j = 1; j < this.size(); j++) {
+                if (this.get(j).luminance() >= targetLum) {
+                    lower = this.get(j - 1);
+                    upper = this.get(j);
+                    break;
+                }
+            }
+
+            // Interpolate in HCL/Lab space
+            float ratio = (targetLum - lower.luminance()) /
+                    (upper.luminance() - lower.luminance());
+            PaletteColor mixed = new PaletteColor(lower.hcl().mixWith(upper.hcl(), ratio));
+            newPalette.add(mixed);
+        }
+
+        newPalette.add(this.get(this.size() - 1)); // keep last
+
+        // Replace with resampled palette
+        this.clear();
+        this.addAll(newPalette);
+    }
+
     /**
      * Adds a highlight color, lighter than the lightest color present
      * Only works if it has at least 2 colors
@@ -601,6 +703,21 @@ public class Palette implements Set<PaletteColor> {
         PaletteColor pl = new PaletteColor(cc);
         this.addUnchecked(pl);
         return pl;
+    }
+
+    private static boolean wasColorClipped(PaletteColor col) {
+        RGBColor rgb = col.rgb();
+        HCLColor hcl = col.hcl();
+        int intValue = rgb.toInt();
+
+        // Mask out alpha (keep B,G,R)
+        int rgbOnly = intValue & 0x00FFFFFF;
+
+        boolean isWhite = (rgbOnly == 0x00FFFFFF);
+        boolean isBlack = (rgbOnly == 0x000000);
+
+        // Only consider clipped if chroma > 0
+        return (hcl.chroma() > 0f) && (isWhite || isBlack);
     }
 
     private HCLColor getNextColor(float lumIncrease, HCLColor source, HCLColor previous) {
@@ -715,14 +832,15 @@ public class Palette implements Set<PaletteColor> {
                                                   float tolerance) {
 
         @Nullable Sampler2D maskSampler = textureMask;
-        //TODO:not comptible with texture packs that change texture size
+        //TODO:not comptible with texture packs that change texture size. soft fail here
         if (textureMask != null &&
                 (textureImage.frameCount() != textureMask.frameCount() ||
                         textureMask.frameWidth() < textureImage.frameWidth() ||
-                        textureMask.frameHeight() < textureImage.frameHeight())) {
-            Moonlight.LOGGER.error("Palette mask {} needs to be at least as large as the target image {} and have the same frame count. You must alter the mask to match the texture size", textureImage.path, textureMask.path);
+                                textureMask.frameHeight() < textureImage.frameHeight())) {
+            Moonlight.LOGGER.error("fromAnimatedImage - Palette mask {} needs to be at least as large as the target image {} and have the same frame count. You must alter the mask's {}x{} to match the texture size's {}x{}",
+                    textureImage.debugPath, textureMask.debugPath, textureMask.imageWidth(), textureMask.imageHeight(), textureImage.imageWidth(), textureImage.imageHeight());
             if (PlatHelper.isDev()) {
-                throw new IllegalArgumentException("Palette mask " + textureMask.path + " has invalid size or frame count");
+                throw new IllegalArgumentException("Palette mask " + textureMask.debugPath + " has invalid size or frame count");
             }
         }
 

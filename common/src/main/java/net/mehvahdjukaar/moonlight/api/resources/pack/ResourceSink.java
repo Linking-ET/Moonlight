@@ -2,6 +2,7 @@ package net.mehvahdjukaar.moonlight.api.resources.pack;
 
 import com.google.common.base.Preconditions;
 import com.google.gson.JsonElement;
+import com.mojang.blaze3d.platform.NativeImage;
 import net.mehvahdjukaar.moonlight.api.resources.RPUtils;
 import net.mehvahdjukaar.moonlight.api.resources.ResType;
 import net.mehvahdjukaar.moonlight.api.resources.SimpleTagBuilder;
@@ -101,12 +102,17 @@ public class ResourceSink {
         addTexture(path, image, true);
     }
 
-    public void addTexture(ResourceLocation path, TextureImage image, boolean isOnAtlas) {
+    public void addTexture(ResourceLocation path, TextureImage texture, boolean isOnAtlas) {
         try {
-            this.addBytes(path, image.getImage().asByteArray(), ResType.TEXTURES);
+            NativeImage image = texture.getImage();
+            if (!texture.isAllocated()) {
+                Moonlight.crashIfInDev("Tried to save a non allocated texture image at " + path+" \nDid you close it too early?");
+                return;
+            }
+            this.addBytes(path, image.asByteArray(), ResType.TEXTURES);
             if (!isOnAtlas) this.markNotClearable(ResType.TEXTURES.getPath(path));
-            if (image.getMcMeta() != null) {
-                this.addJson(path, image.getMcMeta().toJson(), ResType.MCMETA);
+            if (texture.getMcMeta() != null) {
+                this.addJson(path, texture.getMcMeta().toJson(), ResType.MCMETA);
             }
         } catch (Exception e) {
             throw new RuntimeException(e);
@@ -204,7 +210,7 @@ public class ResourceSink {
             try (TextureImage textureImage = textureSupplier.get()){
                 this.addTexture(res, textureImage, isOnAtlas);
             } catch (Exception e) {
-                Moonlight.LOGGER.error("Failed to generate texture {}: {}", res, e);
+                Moonlight.LOGGER.error("addTextureIfNotPresent <- Failed to generate texture {}: {}", res, e);
             }
         }
     }

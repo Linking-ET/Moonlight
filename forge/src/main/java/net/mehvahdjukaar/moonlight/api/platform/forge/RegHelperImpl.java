@@ -10,7 +10,7 @@ import net.mehvahdjukaar.moonlight.api.platform.RegHelper;
 import net.mehvahdjukaar.moonlight.api.resources.recipe.forge.OptionalRecipeCondition;
 import net.mehvahdjukaar.moonlight.core.Moonlight;
 import net.mehvahdjukaar.moonlight.core.misc.AntiRepostWarning;
-import net.minecraft.Util;
+import net.mehvahdjukaar.moonlight.core.mixins.accessor.PoiTypeAccessor;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -19,6 +19,8 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.syncher.EntityDataSerializer;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.packs.PackType;
+import net.minecraft.server.packs.repository.RepositorySource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
@@ -46,6 +48,7 @@ import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.crafting.CompoundIngredient;
 import net.minecraftforge.common.crafting.CraftingHelper;
 import net.minecraftforge.common.extensions.IForgeMenuType;
+import net.minecraftforge.event.AddPackFindersEvent;
 import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
 import net.minecraftforge.event.LootTableLoadEvent;
 import net.minecraftforge.event.RegisterCommandsEvent;
@@ -56,16 +59,19 @@ import net.minecraftforge.event.village.WandererTradesEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.ModList;
-import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.fml.javafmlmod.FMLModContainer;
-import net.minecraftforge.registries.*;
-import org.checkerframework.checker.units.qual.A;
+import net.minecraftforge.registries.DeferredRegister;
+import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraftforge.registries.RegisterEvent;
+import net.minecraftforge.registries.RegistryObject;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+
+import static net.mehvahdjukaar.moonlight.forge.MoonlightForge.getCurrentBus;
 
 
 public class RegHelperImpl {
@@ -135,7 +141,7 @@ public class RegHelperImpl {
         IEventBus bus;
         if (!(cont instanceof FMLModContainer container)) {
             Moonlight.LOGGER.warn("Failed to get mod container for mod {}", modId);
-            bus = FMLJavaModLoadingContext.get().getModEventBus();
+            bus = getCurrentBus();
         } else bus = container.getEventBus();
         return bus;
     }
@@ -150,7 +156,7 @@ public class RegHelperImpl {
                 eventListener.accept(event.getForgeRegistry()::register);
             }
         };
-        FMLJavaModLoadingContext.get().getModEventBus().addListener(eventConsumer);
+        getCurrentBus().addListener(eventConsumer);
     }
 
     public static <C extends AbstractContainerMenu> RegSupplier<MenuType<C>> registerMenuType(
@@ -240,7 +246,7 @@ public class RegHelperImpl {
         Consumer<EntityAttributeCreationEvent> eventConsumer = event -> {
             eventListener.accept((e, b) -> event.put(e, b.build()));
         };
-        FMLJavaModLoadingContext.get().getModEventBus().addListener(eventConsumer);
+        getCurrentBus().addListener(eventConsumer);
     }
 
     public static void addCommandRegistration(RegHelper.CommandRegistration eventListener) {
@@ -267,7 +273,7 @@ public class RegHelperImpl {
             RegHelper.SpawnPlacementEvent spawnPlacementEvent = new PlacementEventImpl(event);
             eventListener.accept(spawnPlacementEvent);
         };
-        FMLJavaModLoadingContext.get().getModEventBus().addListener(eventConsumer);
+        getCurrentBus().addListener(eventConsumer);
     }
 
     public static void registerSimpleRecipeCondition(ResourceLocation id, Predicate<String> predicate) {
@@ -300,6 +306,8 @@ public class RegHelperImpl {
                         if (after && lastValid != null && !isValid) {
                             var rev = Lists.reverse(new ArrayList<>(items));
                             for (var ni : rev) {
+                                if (lastValid.is(ni.getItem()))
+                                    continue;
                                 entries.putAfter(lastValid, ni, CreativeModeTab.TabVisibility.PARENT_AND_SEARCH_TABS);
                             }
                             return;
@@ -322,7 +330,7 @@ public class RegHelperImpl {
             });
             eventListener.accept(itemToTabEvent);
         };
-        FMLJavaModLoadingContext.get().getModEventBus().addListener(EventPriority.LOW, eventConsumer);
+        getCurrentBus().addListener(EventPriority.LOW, eventConsumer);
     }
 
 
@@ -358,26 +366,34 @@ public class RegHelperImpl {
     }
 
     public static void addBlocksToPOI(ResourceKey<PoiType> poi, Iterable<? extends Block> blocks) {
-        var beehivePOI = BuiltInRegistries.POINT_OF_INTEREST_TYPE.getHolderOrThrow(poi);
-        //add vanilla states if they are mutable
-        Set<BlockState> matchingStates = beehivePOI.value().matchingStates();
-        Set<BlockState> newStates = new HashSet<>();
-        try {
-            for (Block block : blocks) {
-                matchingStates.add(block.defaultBlockState());
-                newStates.add(block.defaultBlockState());
-            }
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to add blocks to POI " + poi.location() + ". Somehow the set was not mutable?", e);
-        }
+     //not supported. forge bullshit i cant get this to work. merely adding to the map makes some null appear in the registry snapshots, whatever those are...
+        if(true)return;
+        var poiTypeReference = BuiltInRegistries.POINT_OF_INTEREST_TYPE.getHolderOrThrow(poi);
+        Set<BlockState> matchingStates = new HashSet<>(poiTypeReference.value().matchingStates());
         Map<BlockState, PoiType> map = ForgeRegistries.POI_TYPES.getSlaveMap(BLOCKSTATE_TO_POINT_OF_INTEREST_TYPE, Map.class);
-        newStates.forEach((blockState) -> {
-            PoiType holder2 = map.put(blockState, beehivePOI.value());
-            if (holder2 != null) {
-                throw Util.pauseInIde(new IllegalStateException(String.format(Locale.ROOT, "%s is defined in more than one PoI type", blockState)));
+        for (Block block : blocks) {
+            for (var b : block.getStateDefinition().getPossibleStates()) {
+                matchingStates.add(b);
+                map.put(b, poiTypeReference.value());
             }
-        });
+        }
+        ((PoiTypeAccessor) (Object) poiTypeReference.value()).setMatchingStates(matchingStates);
+
+        //Map<BlockState, PoiType> map = ForgeRegistries.POI_TYPES.getSlaveMap(BLOCKSTATE_TO_POINT_OF_INTEREST_TYPE, Map.class);
+        //newStates.forEach((blockState) -> map.putIfAbsent(blockState, poiTypeReference.value()));
+
         //PoiTypes.registerBlockStates(beehivePOI, newStates);
+    }
+
+    public static void registerResourcePackSource(PackType packType, RepositorySource packSource) {
+        Moonlight.assertInitPhase();
+        IEventBus bus = getCurrentBus();
+        Consumer<AddPackFindersEvent> consumer = event -> {
+            if (event.getPackType() == packType) {
+                event.addRepositorySource(packSource);
+            }
+        };
+        bus.addListener(consumer);
     }
 
     private static final ResourceLocation BLOCKSTATE_TO_POINT_OF_INTEREST_TYPE = new ResourceLocation("minecraft:blockstatetopointofinteresttype");

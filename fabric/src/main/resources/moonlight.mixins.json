@@ -8,7 +8,6 @@
     "BlockModelDeserializerMixin",
     "BlockModelMixin",
     "ClientPacketListenerMixin",
-    "GameRendererMixin",
     "ItemRendererAccessor",
     "ItemRendererMixin",
     "LocalPlayerMixin",
@@ -20,17 +19,18 @@
     "SelfItemStackRenderer",
     "SelfModFlowingFluidMixin",
     "SelfModFluidRendererPropertiesMixin",
-    "ShaderInstanceMixin",
     "TextureAtlasMixin",
     "TextureAtlasSpriteMixin"
   ],
   "mixins": [
     "ConditionsHackMixin",
+    "CreateWorldScreenMixin",
     "FireBlockMixin",
     "MappedRegistryAccessor",
     "MenuTypeAccessor",
+    "MinecraftServerMixin",
     "PackRepositoryAccessor",
-    "PackRepositoryMixin",
+    "ServerPackSourceMixin",
     "ServerPlayerAccessor"
   ],
   "injectors": {

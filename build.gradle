@@ -1,20 +1,59 @@
 plugins {
     id "architectury-plugin" version "3.4-SNAPSHOT"
-    id "dev.architectury.loom" version "1.9-SNAPSHOT" apply false
-    id "com.matthewprenger.cursegradle" version "1.4.0"
-    id "com.modrinth.minotaur" version "2.8.4"
+    id "dev.architectury.loom" version "1.11-SNAPSHOT" apply false
+    id "com.hypherionmc.modutils.modpublisher" version "2.2.3" apply false
+    id "com.possible-triangle.publishing" version "1.2.67" apply false
 }
 
 architectury {
     minecraft = rootProject.minecraft_version
 }
 
+allprojects {
+    apply plugin: "java"
+    apply plugin: "architectury-plugin"
+    apply plugin: "com.possible-triangle.publishing"
+
+    archivesBaseName = rootProject.mod_id
+    version = rootProject.mod_version
+    group = rootProject.maven_group
+
+    repositories {
+
+        flatDir {
+            dirs 'mods'
+        }
+
+        mavenLocal()
+
+        maven { url = "https://maven.parchmentmc.org" }
+        maven {
+            url = "https://www.cursemaven.com"
+            allowInsecureProtocol = true
+        }
+        maven {
+            name = 'Ladysnake Mods'
+            url = 'https://maven.ladysnake.org/releases'
+        }
+        maven { url 'https://jitpack.io' }
+
+    }
+
+    tasks.withType(JavaCompile) {
+        options.encoding = "UTF-8"
+        options.release = 17
+    }
+
+    java {
+        withSourcesJar()
+
+    }
+}
 
 subprojects {
     apply plugin: "dev.architectury.loom"
 //    apply plugin: "io.github.juuxel.loom-quiltflower"
-    apply plugin: "com.matthewprenger.cursegradle"
-    apply plugin: "com.modrinth.minotaur"
+    apply plugin: "com.hypherionmc.modutils.modpublisher"
 
 
     loom {
@@ -36,97 +75,159 @@ subprojects {
 
     var changelogFile = rootProject.file("changelog.md")
     var changelogText = changelogFile.exists() ? changelogFile.text : ""
+    def mcVersions = listGameVersions(minecraft_min_version, minecraft_max_version)
 
-    if (env.MODRINTH_TOKEN) {
-        modrinth {
-            projectId = mod_id
-            uploadFile = tasks.remapJar
-            additionalFiles.add(tasks.remapSourcesJar)
-            gameVersions = [minecraft_version]
-            if(modLoader == "forge"){
-                loaders = [modLoader, "neoforge"]
-            }else{
-                loaders = [modLoader]
-            }
-            changelog = changelogText
-            versionNumber = mod_version+"-"+modLoader
-            versionType = "release"
+    publisher {
+        apiKeys {
+            modrinth env.MODRINTH_TOKEN ?: ""
+            curseforge env.CURSEFORGE_TOKEN ?: ""
+        }
 
-            if (modLoader == "fabric") {
-                dependencies {
-                    required.project "fabric-api"
-                }
-            } else {
+//        setDebug(true) // Only for testing
+
+        setModrinthID(modrinth_id)
+        setCurseID(curseforge_id)
+
+        setGameVersions(mcVersions)
+        setChangelog(changelogText)
+        setProjectVersion("${mod_version}-${modLoader}")
+        setVersionType(release_type)
+        setCurseEnvironment("both")
+
+        setArtifact(tasks.remapJar)
+        addAdditionalFile(tasks.remapSourcesJar)
+
+        if (modLoader == "fabric") {
+            setLoaders(modLoader)
+            setDisplayName("${mod_id}-${mod_version}-fabric")
+            modrinthDepends {
+                required("fabric-api")
             }
+
+            curseDepends {
+                required("fabric-api")
+            }
+        }
+        //!! FORGE
+        else {
+            setLoaders(modLoader, "neoforge")
+            setDisplayName("${mod_id}-${mod_version}-forge")
+            // modrinthDepends / curseDepends are not needed
         }
     }
 
-    if (env.CURSEFORGE_TOKEN) {
-        curseforge {
-            apiKey = env.CURSEFORGE_TOKEN
-            project {
-                id = rootProject.project_id
-                changelog = changelogText
-                changelogType = 'markdown'
-                releaseType = 'release'
-                addGameVersion rootProject.minecraft_version
-                addGameVersion modLoader.capitalize()
-                if(modLoader == "forge"){
-                    addGameVersion "NeoForge"
-                }
-                mainArtifact(tasks.remapJar)
-                addArtifact(tasks.remapSourcesJar)
+    publishing {
+        repositories {
+            mavenLocal()
 
-                if (modLoader == "fabric") {
-                    relations {
-                        requiredDependency "fabric-api"
+            def nexusToken = System.getenv('NEXUS_TOKEN')
+            def nexusUser = System.getenv("NEXUS_USER")
+            if (nexusToken != null && nexusUser != null) {
+                maven {
+                    url = uri("https://registry.somethingcatchy.net/repository/maven-releases/")
+                    credentials {
+                        username = nexusUser
+                        password = nexusToken
                     }
-                } else {
                 }
             }
         }
     }
 }
 
-allprojects {
-    apply plugin: "java"
-    apply plugin: "architectury-plugin"
-    apply plugin: "maven-publish"
 
-    archivesBaseName = rootProject.mod_id
-    version = rootProject.mod_version
-    group = rootProject.maven_group
 
-    repositories {
 
-        flatDir {
-            dirs 'mods'
-        }
+// --- Utils
+static List<String> listGameVersions(String minInclusive, String maxExclusive) {
 
-        mavenLocal()
+    def minParts = minInclusive.split('\\.')
+    def maxParts = maxExclusive.split('\\.')
 
-        maven { url "https://maven.parchmentmc.org" }
-
-        maven {
-            url = "https://www.cursemaven.com"
-            allowInsecureProtocol = true
-        }
-        maven {
-            name = 'Ladysnake Mods'
-            url = 'https://maven.ladysnake.org/releases'
-        }
-
-        maven { url 'https://jitpack.io' }
-
+    if (minParts.size() < 2 || minParts.size() > 3 ||
+            maxParts.size() < 2 || maxParts.size() > 3) {
+        throw new IllegalArgumentException("Version must be MAJOR.MINOR or MAJOR.MINOR.PATCH")
     }
 
-    tasks.withType(JavaCompile) {
-        options.encoding = "UTF-8"
-        options.release = 17
+    def minNums = minParts.collect { it as int }
+    def maxNums = maxParts.collect { it as int }
+
+    while (minNums.size() < 3) minNums << 0
+    while (maxNums.size() < 3) maxNums << 0
+
+    if (minNums[0] != maxNums[0] || minNums[1] != maxNums[1]) {
+        throw new IllegalArgumentException("Major and minor versions must match")
     }
 
-    java {
-        withSourcesJar()
+    int startPatch = minNums[2]
+    int endPatch   = maxNums[2]
 
+    def versions = []
+
+    for (int i = startPatch; i < endPatch; i++) {
+        if (i == 0) {
+            versions << "${minNums[0]}.${minNums[1]}"
+        } else {
+            versions << "${minNums[0]}.${minNums[1]}.${i}"
+        }
+    }
+
+    return versions
+}
+
+
+tasks.register('buildAndPublishAll') {
+    dependsOn ':clean'
+    dependsOn ':common:clean'
+    dependsOn ':fabric:clean'
+    dependsOn ':forge:clean'
+    dependsOn ':build'
+    dependsOn ':forge:build'
+    dependsOn ':fabric:build'
+    dependsOn ':forge:curseforge'
+    dependsOn ':forge:modrinth'
+    dependsOn ':fabric:curseforge'
+    dependsOn ':fabric:modrinth'
+    dependsOn ':publishToMavenLocal'
+    dependsOn ':forge:publishToMavenLocal'
+    dependsOn ':fabric:publishToMavenLocal'
+    dependsOn ':common:publish'
+    dependsOn ':forge:publish'
+    dependsOn ':fabric:publish'
+    finalizedBy ':gitTag'
+
+    group = 'build'
+    description = 'Runs clean, build, and publish neoforge and fabric'
+}
+
+
+tasks.register('gitTag') {
+    group = 'build'
+    description = 'Create and push git tag from project version'
+
+    doLast {
+        def tag = project.version.toString()
+
+        // check if tag already exists
+        def stdout = new ByteArrayOutputStream()
+        exec {
+            commandLine 'git', 'tag', '-l', tag
+            standardOutput = stdout
+        }
+
+        if (!stdout.toString().trim().isEmpty()) {
+            logger.warn("Git tag '${tag}' already exists")
+        } else {
+
+            // create annotated tag
+            exec {
+                commandLine 'git', 'tag', '-a', tag, '-m', "Release ${tag}"
+            }
+
+            // push tag
+            exec {
+                commandLine 'git', 'push', 'origin', tag
+            }
+        }
     }
 }

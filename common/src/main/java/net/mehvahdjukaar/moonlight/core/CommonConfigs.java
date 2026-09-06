@@ -11,6 +11,8 @@ public class CommonConfigs {
     public static final Supplier<Boolean> CLEAR_RESOURCES;
     public static final Supplier<Boolean> EXTRA_DEBUG;
     public static final Supplier<Boolean> EXTRA_CHILDREN_DEBUG;
+    public static final Supplier<String> GLOBAL_DATAPACKS_DIR;
+    public static final Supplier<Boolean> MULTI_THREADED_GENERATION;
 
     public static final ConfigSpec CONFIG;
 
@@ -19,10 +21,14 @@ public class CommonConfigs {
         builder.push("general");
         CLEAR_RESOURCES = builder.comment("Clears dynamic models and textures from the mod dynamic pack once resource reload is done. This can save up some RAM. Turning off if you notice inconsistencies with pack loading")
                 .define("clear_dynamic_resources", false);
+        MULTI_THREADED_GENERATION = builder.comment("Enables multi-threaded generation for dynamic assets (if supported). This could improve performance on systems with more cores available.")
+                .define("multi_threaded_generation", true);
         EXTRA_DEBUG = builder.comment("ONLY for debugging purpose. Turns one some debug functionality like more logging or blocktypes_debug.txt, the file can be found in ~/.minecraft/debug/dynamic_registry_dump...")
                 .define("extra_debug", false);
         EXTRA_CHILDREN_DEBUG = builder.comment("Enable this will list each BlockTypes' Children. The List of BlockTypes' children will be also in the same file via EXTRA_DEBUG. NOTE: To enable this, EXTRA_DEBUG must be enabled, too.")
                 .define("extra_children_debug", false);
+        GLOBAL_DATAPACKS_DIR = builder.comment("Global datapack folder. A folder where you can store and load datapacks for all your worlds automatically. Set to empty string to disable")
+                .define("global_datapacks_folder", "moonlight-global-datapacks");
         builder.pop();
         builder.setSynced();
 

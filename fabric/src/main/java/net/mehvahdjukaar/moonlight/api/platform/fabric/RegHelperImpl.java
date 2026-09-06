@@ -1,8 +1,6 @@
 package net.mehvahdjukaar.moonlight.api.platform.fabric;
 
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
-import net.fabricmc.fabric.api.event.registry.FabricRegistryBuilder;
-import net.fabricmc.fabric.api.event.registry.RegistryAttribute;
 import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
 import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
 import net.fabricmc.fabric.api.loot.v2.LootTableEvents;
@@ -18,9 +16,12 @@ import net.mehvahdjukaar.moonlight.api.platform.PlatHelper;
 import net.mehvahdjukaar.moonlight.api.platform.RegHelper;
 import net.mehvahdjukaar.moonlight.core.Moonlight;
 import net.mehvahdjukaar.moonlight.core.misc.AntiRepostWarning;
+import net.mehvahdjukaar.moonlight.core.mixins.accessor.PoiTypeAccessor;
+import net.mehvahdjukaar.moonlight.core.mixins.fabric.PackRepositoryAccessor;
 import net.mehvahdjukaar.moonlight.core.set.fabric.BlockSetInternalImpl;
 import net.mehvahdjukaar.moonlight.fabric.MoonlightFabric;
 import net.mehvahdjukaar.moonlight.fabric.ResourceConditionsBridge;
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
@@ -29,6 +30,8 @@ import net.minecraft.network.syncher.EntityDataSerializer;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.packs.PackType;
+import net.minecraft.server.packs.repository.RepositorySource;
 import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.ai.village.poi.PoiType;
 import net.minecraft.world.entity.ai.village.poi.PoiTypes;
@@ -283,24 +286,40 @@ public class RegHelperImpl {
     public static <T> Supplier<EntityDataSerializer<T>> regEntityDataSerializer(ResourceLocation name, Supplier<EntityDataSerializer<T>> serializer) {
         var value = serializer.get();
         EntityDataSerializers.registerSerializer(value);
-        return ()->value;
+        return () -> value;
     }
 
     public static void addBlocksToPOI(ResourceKey<PoiType> poi, Iterable<? extends Block> blocks) {
-        var beehivePOI = BuiltInRegistries.POINT_OF_INTEREST_TYPE.getHolderOrThrow(poi);
+        var poiTypeReference = BuiltInRegistries.POINT_OF_INTEREST_TYPE.getHolderOrThrow(poi);
         //add vanilla states if they are mutable
-        Set<BlockState> matchingStates = beehivePOI.value().matchingStates();
+        Set<BlockState> matchingStates = new HashSet<>(poiTypeReference.value().matchingStates());
         Set<BlockState> newStates = new HashSet<>();
-        try {
-            for (Block block : blocks) {
-                matchingStates.add(block.defaultBlockState());
-                newStates.add(block.defaultBlockState());
+        for (Block block : blocks) {
+            for (var b : block.getStateDefinition().getPossibleStates()) {
+                matchingStates.add(b);
+                newStates.add(b);
             }
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to add blocks to POI " + poi.location() + ". Somehow the set was not mutable?", e);
         }
-        PoiTypes.registerBlockStates(beehivePOI, newStates);
+        ((PoiTypeAccessor) (Object) poiTypeReference.value())
+                .setMatchingStates(matchingStates);
+
+        PoiTypes.registerBlockStates(poiTypeReference, newStates);
     }
 
+    public static void registerResourcePackSource(PackType packType, RepositorySource packSource) {
+        Moonlight.assertInitPhase();
+
+        //client is already loaded. add immediately, saving hassle
+        if (packType == PackType.CLIENT_RESOURCES && PlatHelper.getPhysicalSide().isClient()) {
+            if (Minecraft.getInstance().getResourcePackRepository() instanceof PackRepositoryAccessor rep) {
+                var newSources = new HashSet<>(rep.getSources());
+                newSources.add(packSource);
+                rep.setSources(newSources);
+            }
+        }
+        if (packType == PackType.SERVER_DATA) {
+            MoonlightFabric.EXTRA_DATA_PACK_SOURCES.add(packSource);
+        }
+    }
 
 }
